@@ -1,0 +1,15 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "cn.chloeprime.cozygunfight.mixin",
+  "compatibilityLevel": "JAVA_8",
+  "refmap": "cozygunfight.refmap.json",
+  "mixins": [
+  ],
+  "client": [
+    "client.MeleeKeyAccessor"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
