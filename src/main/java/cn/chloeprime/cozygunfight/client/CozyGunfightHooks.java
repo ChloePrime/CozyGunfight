@@ -1,9 +1,13 @@
 package cn.chloeprime.cozygunfight.client;
 
 import cn.chloeprime.cozygunfight.mixin.client.MeleeKeyAccessor;
+import com.tacz.guns.api.DefaultAssets;
 import com.tacz.guns.api.TimelessAPI;
 import com.tacz.guns.api.client.gameplay.IClientPlayerGunOperator;
+import com.tacz.guns.api.entity.IGunOperator;
 import com.tacz.guns.api.item.IGun;
+import com.tacz.guns.api.item.attachment.AttachmentType;
+import com.tacz.guns.api.item.gun.AbstractGunItem;
 import com.tacz.guns.client.input.ShootKey;
 import com.tacz.guns.resource.index.CommonGunIndex;
 import com.tacz.guns.resource.pojo.data.gun.Bolt;
@@ -13,9 +17,11 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.InputEvent;
+import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
+import java.util.Arrays;
 import java.util.Optional;
 
 @Mod.EventBusSubscriber(Dist.CLIENT)
@@ -25,8 +31,21 @@ public class CozyGunfightHooks {
         return range <= 4;
     }
 
-    @SubscribeEvent
-    public static void onKeyInput(InputEvent.MouseButton.Post event) {
+    public static boolean canDoMeleeAttack(IGun gunItem, ItemStack gunStack, CommonGunIndex index) {
+        if (index.getGunData().getMeleeData().getDefaultMeleeData() != null) {
+            return true;
+        }
+        return Arrays.stream(MELEE_ABLE_ATTACHMENT_TYPES)
+                .map(attachmentType -> gunItem.getAttachmentId(gunStack, attachmentType))
+                .filter(attachmentId -> !DefaultAssets.isEmptyAttachmentId(attachmentId))
+                .flatMap(attachmentId -> TimelessAPI.getCommonAttachmentIndex(attachmentId).stream())
+                .anyMatch(attachment -> attachment.getData().getMeleeData() != null);
+    }
+
+    private static final AttachmentType[] MELEE_ABLE_ATTACHMENT_TYPES = {AttachmentType.MUZZLE, AttachmentType.STOCK};
+
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    public static void onKeyInput(InputEvent.MouseButton.Pre event) {
         var gun = Optional.ofNullable(Minecraft.getInstance().player)
                 .filter(IGun::mainhandHoldGun)
                 .map(LivingEntity::getMainHandItem)
@@ -45,15 +64,24 @@ public class CozyGunfightHooks {
 
         if (InputExtraCheck.isInGame() && event.getAction() == 1 && ShootKey.SHOOT_KEY.matchesMouse(event.getButton())) {
             var totalAmmo = getTotalAmmo(kun, gun, index);
-            // 左键近战
-            if (totalAmmo == 0 && isMeleeWeapon(index)) {
-                MeleeKeyAccessor.invokeDoMeleeLogic();
-                return;
-            }
-            // 左键装弹
             var player = Minecraft.getInstance().player;
-            if (totalAmmo == 0 && player != null && !player.isSpectator()) {
-                IClientPlayerGunOperator.fromLocalPlayer(player).reload();
+
+            // 左键装弹
+            if (!isMeleeWeapon(index) && totalAmmo == 0 && player != null && !player.isSpectator()) {
+                // 如果可以装弹则装弹
+                var canReload = (!IGunOperator.fromLivingEntity(player).needCheckAmmo())
+                        || (!(kun instanceof AbstractGunItem agi))
+                        || agi.canReload(player, gun);
+                if (canReload) {
+                    IClientPlayerGunOperator.fromLocalPlayer(player).reload();
+                    return;
+                }
+                // 否则执行近战
+            }
+            // 左键近战
+            if (totalAmmo == 0 && canDoMeleeAttack(kun, gun, index)) {
+                MeleeKeyAccessor.invokeDoMeleeLogic();
+                event.setCanceled(true);
             }
         }
     }
